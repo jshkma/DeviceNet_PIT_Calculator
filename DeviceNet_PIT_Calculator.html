@@ -401,28 +401,137 @@
 let nodeId = 0;
 const nodes = [];
 
+/**
+ * CAN 프레임 1개를 전송하는 데 걸리는 시간(ms)을 계산한다.
+ *
+ * ── CAN 프레임 구조 (Standard Frame 기준) ──────────────────────────────
+ *  SOF(1) + ID(11) + RTR(1) + IDE(1) + r0(1) + DLC(4)   → 헤더  19 bits
+ *  Data Field                                             → bytes × 8 bits
+ *  CRC(15) + CRC Delimiter(1)                            → 16 bits
+ *  ACK Slot(1) + ACK Delimiter(1)                        → 2 bits
+ *  EOF(7) + IFS(3)                                       → 10 bits
+ *  합계 (데이터 제외 고정 오버헤드)                        → 47 bits
+ * ──────────────────────────────────────────────────────────────────────
+ *
+ * @param {number} bytes - 데이터 필드 크기 (바이트 단위, 0~8)
+ * @param {number} baud  - 통신 속도 (kbps 단위, 예: 500)
+ * @returns {number} 프레임 전송 시간 (ms)
+ */
 function frameTime(bytes, baud) {
-  const bits    = 47 + bytes * 8;
+  // ① 프레임 전체 비트 수 = 고정 오버헤드(47 bits) + 데이터 비트(bytes × 8)
+  const bits = 47 + bytes * 8;
+
+  // ② 비트 스터핑(Bit Stuffing) 보정
+  //    CAN 프로토콜은 동일한 비트가 5개 연속되면 반대 극성의 비트를 1개 삽입한다.
+  //    이론적 최악 조건에서 최대 20%의 비트가 추가될 수 있으므로 × 1.2 를 적용한다.
   const stuffed = bits * 1.2;
+
+  // ③ 전송 시간(ms) 계산
+  //    baud(kbps) × 1000 = bps(초당 비트 수)
+  //    stuffed / bps = 전송에 걸리는 시간(초)
+  //    × 1000 → 밀리초(ms) 단위로 변환
   return (stuffed / (baud * 1000)) * 1000;
 }
 
+/**
+ * 슬레이브 노드 1개를 1회 폴링하는 데 걸리는 총 전송 시간(ms)을 계산한다.
+ *
+ * DeviceNet 폴링 통신은 두 단계로 이루어진다.
+ *  1) 요청(Request)  : 마스터 → 슬레이브  (Output 데이터 전송)
+ *  2) 응답(Response) : 슬레이브 → 마스터  (Input 데이터 수신)
+ *
+ * CAN 프레임 1개의 최대 데이터 페이로드는 8 bytes이다.
+ * 데이터가 8 bytes를 초과하면 DeviceNet 프래그멘테이션(Fragmentation) 규칙에 따라
+ * 여러 프레임으로 분할 전송된다. 이때 각 분할 프레임의 첫 번째 바이트는
+ * 프래그멘테이션 헤더(순서·마지막 여부 표시)로 사용되므로
+ * 실제 데이터를 담을 수 있는 공간은 7 bytes로 줄어든다.
+ * → 단, 이 구현에서는 "8 bytes 단위로 쪼개되, 프래그 시 +1 byte 오버헤드"를 적용한다.
+ *
+ * @param {number} inB   - Input 데이터 크기 (bytes): 슬레이브 → 마스터 방향
+ * @param {number} outB  - Output 데이터 크기 (bytes): 마스터 → 슬레이브 방향
+ * @param {number} baud  - 통신 속도 (kbps 단위, 예: 500)
+ * @returns {number} 노드 1회 전송에 필요한 총 시간 (ms)
+ */
 function nodeTransferTime(inB, outB, baud) {
-  const reqFrames = Math.ceil(outB / 8) || 1;
-  const resFrames = Math.ceil(inB  / 8) || 1;
-  let t = 0;
+  // ── 프레임 수 계산 ────────────────────────────────────────────────────────
+  // CAN 프레임 1개에 최대 8 bytes를 실을 수 있으므로, 전체 데이터를 8로 나눠 올림한다.
+  // || 1 : outB 또는 inB가 0인 경우에도 최소 1프레임(빈 폴 프레임)은 주고받아야 한다.
+  const reqFrames = Math.ceil(outB / 8) || 1; // 요청 프레임 수 (마스터→슬레이브)
+  const resFrames = Math.ceil(inB  / 8) || 1; // 응답 프레임 수 (슬레이브→마스터)
+
+  let t = 0; // 누적 전송 시간 (ms)
+
+  // ── ① 요청 단계: 마스터 → 슬레이브 (Output 데이터 전송) ────────────────
   for (let i = 0; i < reqFrames; i++) {
+    // i번째 프레임에 실을 데이터 바이트 수
+    // 예) outB=20, i=0 → min(8, 20)=8 / i=1 → min(8, 12)=8 / i=2 → min(8, 4)=4
     const d = Math.min(8, outB - i * 8);
+
+    // frameTime에 전달할 실질 데이터 크기를 결정한다.
+    //  - (d > 0 ? d : 0)       : 남은 데이터가 없으면 0 bytes로 처리
+    //  - (reqFrames > 1 ? 1 : 0): 프래그멘테이션이 발생할 경우(프레임 2개 이상),
+    //                             각 프레임에 1 byte의 프래그멘테이션 헤더 오버헤드를 추가
     t += frameTime((d > 0 ? d : 0) + (reqFrames > 1 ? 1 : 0), baud);
   }
+
+  // ── ② 응답 단계: 슬레이브 → 마스터 (Input 데이터 수신) ─────────────────
   for (let i = 0; i < resFrames; i++) {
+    // i번째 응답 프레임에 실을 데이터 바이트 수 (요청과 동일한 방식)
     const d = Math.min(8, inB - i * 8);
+
+    // 응답 프래그멘테이션도 동일하게 +1 byte 헤더 오버헤드 적용
     t += frameTime((d > 0 ? d : 0) + (resFrames > 1 ? 1 : 0), baud);
   }
+
+  // 요청 + 응답 전체 전송 시간을 반환한다.
   return t;
 }
 
+/**
+ * 주어진 데이터 크기(bytes)를 CAN 프레임으로 전송할 때 필요한 프레임 수를 반환한다.
+ *
+ * CAN 프레임 1개의 최대 데이터 페이로드는 8 bytes이므로,
+ * 전체 바이트 수를 8로 나눠 올림(ceil)하면 필요한 프레임 수가 된다.
+ *
+ * 예)  b=6  → ceil(6/8)  = 1  (단일 프레임, 프래그멘테이션 없음)
+ *      b=8  → ceil(8/8)  = 1  (단일 프레임, 프래그멘테이션 없음)
+ *      b=9  → ceil(9/8)  = 2  (2프레임으로 분할 전송)
+ *      b=20 → ceil(20/8) = 3  (3프레임으로 분할 전송)
+ *
+ * || 1 : b가 0인 경우 ceil(0/8) = 0이 되지만,
+ *        실제 통신에서는 데이터가 없어도 빈 폴 프레임을 최소 1회 교환하므로 1을 반환한다.
+ *
+ * @param {number} b - 데이터 크기 (bytes)
+ * @returns {number} 필요한 CAN 프레임 수 (최소 1)
+ */
 function fragCount(b) { return Math.ceil(b / 8) || 1; }
+/*
+ * ── C++ 동등 코드 ──────────────────────────────────────────────────────
+ *
+ * #include <cmath>   // std::ceil 사용을 위해 필요
+ *
+ * // JavaScript의 Math.ceil(b / 8) || 1 을 C++로 변환한 함수
+ * // JavaScript와 달리 정수 나눗셈은 소수점이 버려지므로 (double)캐스팅이 필요하다.
+ * int fragCount(int b) {
+ *     int count = static_cast<int>(std::ceil(static_cast<double>(b) / 8));
+ *     return count > 0 ? count : 1;  // || 1 에 해당: 최소 1프레임 보장
+ * }
+ *
+ * ── JavaScript와 C++의 차이점 ───────────────────────────────────────────
+ *  1. 정수 나눗셈
+ *     - JavaScript : b / 8 → 항상 부동소수점 결과  (예: 9/8 = 1.125)
+ *     - C++        : int/int → 소수점 버림 발생     (예: 9/8 = 1)
+ *                    → static_cast<double>(b) / 8 로 명시적 형변환 필요
+ *
+ *  2. 논리 OR 연산자 (|| 1)
+ *     - JavaScript : 0 || 1 → 1  (Falsy 값이면 오른쪽 피연산자 반환)
+ *     - C++        : || 는 bool 결과(0 또는 1)만 반환하므로 삼항 연산자로 대체
+ *                    count > 0 ? count : 1
+ *
+ *  3. std::ceil 반환형
+ *     - C++의 std::ceil()은 double을 반환하므로 int로 명시적 캐스팅 필요
+ * ──────────────────────────────────────────────────────────────────────
+ */
 
 const PRESETS = {
   mfc: { type: 'mfc', inB: 6,  outB: 6  },
@@ -430,6 +539,7 @@ const PRESETS = {
   io:  { type: 'io',  inB: 4,  outB: 4  },
 };
 
+// 노드 테이블에 새 행(Row)을 동적으로 생성하여 추가하고, calc()를 호출해 결과를 갱신한다.
 function addNode(name, type, mac, inB, outB) {
   const id  = ++nodeId;
   nodes.push({ id });
@@ -456,6 +566,7 @@ function addNode(name, type, mac, inB, outB) {
   calc();
 }
 
+// PRESETS에 정의된 기기 유형(mfc / epc / io)의 기본값으로 노드를 즉시 추가하는 단축 함수.
 function addPreset(type) {
   const p   = PRESETS[type] || PRESETS.io;
   const idx = nodes.length + 1;
@@ -465,6 +576,7 @@ function addPreset(type) {
   addNode(name, p.type, idx, p.inB, p.outB);
 }
 
+// 지정한 id의 노드를 nodes 배열과 테이블에서 삭제하고, 행 번호를 재정렬한 뒤 calc()를 호출한다.
 function removeNode(id) {
   const i = nodes.findIndex(n => n.id === id);
   if (i >= 0) nodes.splice(i, 1);
@@ -476,6 +588,7 @@ function removeNode(id) {
   calc();
 }
 
+// 사용자 확인 후 nodes 배열과 테이블을 전부 비우고 nodeId 카운터를 초기화한다.
 function clearNodes() {
   if (nodes.length && !confirm('모든 노드를 초기화하시겠습니까?')) return;
   nodes.length = 0; nodeId = 0;
@@ -483,6 +596,7 @@ function clearNodes() {
   calc();
 }
 
+// 모든 노드의 전송 시간을 합산해 권장 PIT·버스 부하율·판정 결과를 계산하고 화면에 반영한다.
 function calc() {
   const baud       = parseInt(document.getElementById('baud').value);
   const epr        = parseInt(document.getElementById('epr').value)    || 75;
