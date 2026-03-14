@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeviceNet PIT Time 계산기 — TES CO., LTD. S/W1 Team</title>
+<style>
+  :root {
+    --blue:      #1F4E79;
+    --blue-lt:   #D6E4F0;
+    --blue-mid:  #2E75B6;
+    --teal:      #0F5132;
+    --teal-lt:   #D1ECE1;
+    --amber:     #7B4F00;
+    --amber-lt:  #FFF3CD;
+    --red:       #842029;
+    --red-lt:    #F8D7DA;
+    --gray:      #495057;
+    --gray-lt:   #F8F9FA;
+    --border:    #DEE2E6;
+    --white:     #FFFFFF;
+    --text:      #212529;
+    --text-muted:#6C757D;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    background: #F0F4F8;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--blue);
+    color: #fff;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .sub { font-size: 12px; color: #9DC3E6; margin-top: 2px; }
+  .badge {
+    background: #2E75B6;
+    color: #fff;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+  }
+
+  /* ── Layout ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+  /* ── Card ── */
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--blue-lt);
+  }
+
+  /* ── Form controls ── */
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .field label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  select, input[type=number], input[type=text] {
+    padding: 7px 10px;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--white);
+    color: var(--text);
+    transition: border .15s;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--blue-mid); }
+
+  /* ── Node table ── */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 700px; }
+  th {
+    background: var(--blue);
+    color: #fff;
+    padding: 8px 10px;
+    font-weight: 500;
+    text-align: center;
+    border: 1px solid #1a4268;
+    white-space: nowrap;
+  }
+  td {
+    padding: 5px 6px;
+    border: 1px solid var(--border);
+    text-align: center;
+    vertical-align: middle;
+  }
+  tr:nth-child(even) td { background: var(--gray-lt); }
+  td input, td select {
+    width: 100%; border: none; background: transparent;
+    font-size: 13px; text-align: center; color: var(--text); padding: 2px 4px;
+  }
+  td input:focus, td select:focus { outline: 1px solid var(--blue-mid); border-radius: 3px; }
+
+  /* ── Buttons ── */
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .btn {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--white);
+    color: var(--text);
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .btn:hover { background: var(--gray-lt); }
+  .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .btn-primary:hover { background: #1a4268; }
+  .btn-success { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .btn-success:hover { background: #0a3d22; }
+  .btn-danger { color: var(--red); border-color: #F5C6CB; }
+  .btn-danger:hover { background: var(--red-lt); }
+  .btn-sm { padding: 3px 9px; font-size: 11px; }
+
+  /* ── Metric cards ── */
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+  .metric {
+    background: var(--gray-lt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 12px;
+    text-align: center;
+  }
+  .metric .m-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+  .metric .m-value { font-size: 26px; font-weight: 600; color: var(--text); line-height: 1; }
+  .metric .m-unit  { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .metric.highlight { border-color: var(--blue-mid); background: var(--blue-lt); }
+  .metric.highlight .m-value { color: var(--blue); }
+
+  /* ── Gauge ── */
+  .gauge-bar {
+    height: 20px; border-radius: 10px;
+    background: var(--gray-lt);
+    border: 1px solid var(--border);
+    overflow: hidden; margin: 4px 0;
+  }
+  .gauge-fill { height: 100%; border-radius: 10px; transition: width .4s; }
+  .gauge-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
+
+  /* ── Verdict ── */
+  .verdict {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 14px;
+    border-left: 4px solid;
+  }
+  .verdict.ok   { background: var(--teal-lt); color: var(--teal); border-color: #1D9E75; }
+  .verdict.warn { background: var(--amber-lt); color: var(--amber); border-color: #EF9F27; }
+  .verdict.err  { background: var(--red-lt); color: var(--red); border-color: #E24B4A; }
+
+  /* ── Detail table ── */
+  .detail-tbl th { background: var(--blue-mid); font-size: 12px; padding: 6px 8px; }
+  .detail-tbl td { font-size: 12px; padding: 5px 8px; }
+
+  /* ── Explicit info ── */
+  .info-box {
+    background: var(--blue-lt);
+    border: 1px solid #B5D4F4;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.9;
+    color: var(--blue);
+  }
+  .info-box strong { font-weight: 600; }
+
+  /* ── Notes ── */
+  .note { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 20px;
+    border-top: 1px solid var(--border);
+    background: var(--white);
+    margin-top: 10px;
+  }
+
+  .hidden { display: none; }
+  @media print {
+    body { background: #fff; }
+    header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .btn-row, .btn { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>DeviceNet PIT Time 계산기</h1>
+    <div class="sub">Hilscher CIF50-DNM | Explicit Message 안정화를 위한 Poll Interval Time 산출 도구</div>
+  </div>
+  <span class="badge">S/W1 Team · TES CO., LTD.</span>
+</header>
+
+<div class="container">
+
+  <!-- ① 네트워크 기본 설정 -->
+  <div class="card">
+    <div class="card-title">① 네트워크 기본 설정</div>
+    <div class="grid3">
+      <div class="field">
+        <label>통신 속도 (Baud Rate)</label>
+        <select id="baud" onchange="calc()">
+          <option value="500">500 kbps (권장 — MFC 다수 환경)</option>
+          <option value="250">250 kbps</option>
+          <option value="125">125 kbps</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>EPR (Expected Packet Rate) — SyConDN 기본값 75</label>
+        <input type="number" id="epr" value="75" min="1" max="65535" step="1" oninput="calc()">
+      </div>
+      <div class="field">
+        <label>안전 여유율 (권장 250%)</label>
+        <select id="margin" onchange="calc()">
+          <option value="2.0">200% — 최소 여유</option>
+          <option value="2.5" selected>250% — 권장</option>
+          <option value="3.0">300% — 매우 안전</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② 노드 정보 입력 -->
+  <div class="card">
+    <div class="card-title">② 노드 정보 입력</div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="addNode()">+ 노드 추가</button>
+      <button class="btn" onclick="addPreset('mfc')">+ MFC 프리셋</button>
+      <button class="btn" onclick="addPreset('epc')">+ EPC 프리셋</button>
+      <button class="btn" onclick="addPreset('io')">+ I/O 모듈 프리셋</button>
+      <button class="btn btn-danger" onclick="clearNodes()">전체 초기화</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px">No.</th>
+            <th style="width:140px">노드 이름</th>
+            <th style="width:100px">유형</th>
+            <th style="width:80px">MAC ID</th>
+            <th style="width:100px">Input (bytes)<br><span style="font-weight:400;font-size:11px">슬레이브→마스터</span></th>
+            <th style="width:100px">Output (bytes)<br><span style="font-weight:400;font-size:11px">마스터→슬레이브</span></th>
+            <th style="width:55px">삭제</th>
+          </tr>
+        </thead>
+        <tbody id="nodeBody"></tbody>
+      </table>
+    </div>
+    <p class="note">
+      * Input: 슬레이브가 마스터에게 보내는 데이터 크기 (센서값, 현재 유량, 상태 등)<br>
+      * Output: 마스터가 슬레이브에게 보내는 데이터 크기 (설정값, 명령 등)<br>
+      * SyConDN에서 각 슬레이브의 I/O 탭에서 확인 가능
+    </p>
+  </div>
+
+  <!-- ③ 계산 결과 -->
+  <div class="card">
+    <div class="card-title">③ 계산 결과</div>
+
+    <div id="noResult" class="verdict warn">
+      노드를 1개 이상 추가하면 결과가 자동으로 계산됩니다.
+    </div>
+
+    <div id="resultArea" class="hidden">
+      <div id="verdictBox" class="verdict ok"></div>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="m-label">전체 Poll 점유시간</div>
+          <div class="m-value" id="rPollTime">—</div>
+          <div class="m-unit">ms / 사이클</div>
+        </div>
+        <div class="metric highlight">
+          <div class="m-label">권장 PIT 설정값</div>
+          <div class="m-value" id="rPIT">—</div>
+          <div class="m-unit">ms (SyConDN에 입력)</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">EPR 타임아웃 상한선</div>
+          <div class="m-value" id="rEPRLimit">—</div>
+          <div class="m-unit">ms (초과 금지)</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:4px">
+          <span>버스 점유율 (Poll 점유시간 / EPR 타임아웃)</span>
+          <span id="rBusLoad" style="font-weight:500">—</span>
+        </div>
+        <div class="gauge-bar">
+          <div class="gauge-fill" id="gaugeFill" style="width:0%"></div>
+        </div>
+        <div class="gauge-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+      </div>
+
+      <!-- 노드별 상세 -->
+      <div style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:600;color:var(--blue);margin-bottom:8px">노드별 전송시간 상세</div>
+        <div class="tbl-wrap">
+          <table class="detail-tbl">
+            <thead>
+              <tr>
+                <th>노드명</th>
+                <th>MAC ID</th>
+                <th>유형</th>
+                <th>Input (bytes)</th>
+                <th>Output (bytes)</th>
+                <th>프래그멘테이션</th>
+                <th>전송시간 (ms)</th>
+                <th>비고</th>
+              </tr>
+            </thead>
+            <tbody id="detailBody"></tbody>
+          </table>
+        </div>
+        <p class="note">* 노란색 행: I/O 크기가 8 bytes 초과 → 프래그멘테이션 발생 → 버스 부하 증가</p>
+      </div>
+
+      <!-- Explicit 가용 시간 -->
+      <div class="info-box" id="explicitInfo"></div>
+    </div>
+  </div>
+
+  <!-- 사용 방법 요약 -->
+  <div class="card">
+    <div class="card-title">사용 방법 및 주의사항</div>
+    <div class="grid2">
+      <div>
+        <p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--blue)">입력 정보 확인 위치 (SyConDN)</p>
+        <table style="min-width:unset">
+          <tr>
+            <th style="background:var(--blue-mid);width:130px">항목</th>
+            <th style="background:var(--blue-mid)">SyConDN 위치</th>
+          </tr>
+          <tr><td>Baud Rate</td><td>Master → Bus Parameters → Baud Rate</td></tr>
+          <tr><td>EPR 값</td><td>Slave → Connection → EPR</td></tr>
+          <tr><td>MAC ID</td><td>Slave → Device Configuration</td></tr>
+          <tr><td>Input Size</td><td>Slave → I/O → Input Size (bytes)</td></tr>
+          <tr><td>Output Size</td><td>Slave → I/O → Output Size (bytes)</td></tr>
+          <tr><td>PIT 입력</td><td>Master → Bus Parameters → Poll Interval Time</td></tr>
+        </table>
+      </div>
+      <div>
+        <p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--blue)">주요 판단 기준</p>
+        <table style="min-width:unset">
+          <tr>
+            <th style="background:var(--blue-mid);width:160px">상태</th>
+            <th style="background:var(--blue-mid)">의미</th>
+          </tr>
+          <tr><td style="background:#D1ECE1;color:var(--teal)">녹색 판정</td><td>PIT 값 안전. 그대로 적용 가능</td></tr>
+          <tr><td style="background:#FFF3CD;color:var(--amber)">노란색 판정</td><td>EPR 상한 근접. EPR 상향 또는 노드 감소 권장</td></tr>
+          <tr><td style="background:#F8D7DA;color:var(--red)">빨간색 판정</td><td>설정 불가. 통신속도 업그레이드 필요</td></tr>
+          <tr><td style="background:#FFF3CD;color:var(--amber)">노란색 행 (표)</td><td>8 bytes 초과 노드. I/O 크기 최적화 권장</td></tr>
+        </table>
+        <p class="note" style="margin-top:10px">
+          * 계산 결과는 이론값입니다. 실제 환경에서는 케이블 품질, 노이즈 등에 따라 차이가 있을 수 있습니다.<br>
+          * 설정 변경 후 최소 24시간 이상 모니터링을 권장합니다.
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  DeviceNet PIT Time 계산기 &nbsp;|&nbsp; Hilscher CIF50-DNM 환경 &nbsp;|&nbsp; S/W1 Team · TES CO., LTD.<br>
+  본 도구는 이론 계산 기반이며 실제 적용 전 충분한 검증이 필요합니다.
+</footer>
+
+<script>
+let nodeId = 0;
+const nodes = [];
+
+function frameTime(bytes, baud) {
+  const bits    = 47 + bytes * 8;
+  const stuffed = bits * 1.2;
+  return (stuffed / (baud * 1000)) * 1000;
+}
+
+function nodeTransferTime(inB, outB, baud) {
+  const reqFrames = Math.ceil(outB / 8) || 1;
+  const resFrames = Math.ceil(inB  / 8) || 1;
+  let t = 0;
+  for (let i = 0; i < reqFrames; i++) {
+    const d = Math.min(8, outB - i * 8);
+    t += frameTime((d > 0 ? d : 0) + (reqFrames > 1 ? 1 : 0), baud);
+  }
+  for (let i = 0; i < resFrames; i++) {
+    const d = Math.min(8, inB - i * 8);
+    t += frameTime((d > 0 ? d : 0) + (resFrames > 1 ? 1 : 0), baud);
+  }
+  return t;
+}
+
+function fragCount(b) { return Math.ceil(b / 8) || 1; }
+
+const PRESETS = {
+  mfc: { type: 'mfc', inB: 6,  outB: 6  },
+  epc: { type: 'epc', inB: 8,  outB: 8  },
+  io:  { type: 'io',  inB: 4,  outB: 4  },
+};
+
+function addNode(name, type, mac, inB, outB) {
+  const id  = ++nodeId;
+  nodes.push({ id });
+  const idx = nodes.length;
+  const tr  = document.createElement('tr');
+  tr.id = 'node-' + id;
+  tr.innerHTML = `
+    <td style="color:var(--text-muted);font-size:12px">${idx}</td>
+    <td><input type="text"   value="${name  || 'Node-' + idx}" id="name-${id}" oninput="calc()"></td>
+    <td>
+      <select id="type-${id}" onchange="calc()">
+        <option value="mfc" ${type==='mfc'?'selected':''}>MFC</option>
+        <option value="epc" ${type==='epc'?'selected':''}>EPC</option>
+        <option value="io"  ${type==='io' ?'selected':''}>I/O 모듈</option>
+        <option value="etc" ${type==='etc'?'selected':''}>기타</option>
+      </select>
+    </td>
+    <td><input type="number" value="${mac  !== undefined ? mac  : idx}" min="1" max="63" step="1" id="mac-${id}"  oninput="calc()"></td>
+    <td><input type="number" value="${inB  !== undefined ? inB  : 4  }" min="0" max="128" step="1" id="in-${id}"   oninput="calc()"></td>
+    <td><input type="number" value="${outB !== undefined ? outB : 4  }" min="0" max="128" step="1" id="out-${id}"  oninput="calc()"></td>
+    <td><button class="btn btn-danger btn-sm" onclick="removeNode(${id})">삭제</button></td>
+  `;
+  document.getElementById('nodeBody').appendChild(tr);
+  calc();
+}
+
+function addPreset(type) {
+  const p   = PRESETS[type] || PRESETS.io;
+  const idx = nodes.length + 1;
+  const name = type === 'mfc' ? 'MFC-' + idx
+             : type === 'epc' ? 'EPC-' + idx
+             : 'IO-' + idx;
+  addNode(name, p.type, idx, p.inB, p.outB);
+}
+
+function removeNode(id) {
+  const i = nodes.findIndex(n => n.id === id);
+  if (i >= 0) nodes.splice(i, 1);
+  const tr = document.getElementById('node-' + id);
+  if (tr) tr.remove();
+  document.querySelectorAll('#nodeBody tr').forEach((r, i) => {
+    r.cells[0].textContent = i + 1;
+  });
+  calc();
+}
+
+function clearNodes() {
+  if (nodes.length && !confirm('모든 노드를 초기화하시겠습니까?')) return;
+  nodes.length = 0; nodeId = 0;
+  document.getElementById('nodeBody').innerHTML = '';
+  calc();
+}
+
+function calc() {
+  const baud       = parseInt(document.getElementById('baud').value);
+  const epr        = parseInt(document.getElementById('epr').value)    || 75;
+  const marginMult = parseFloat(document.getElementById('margin').value);
+  const eprLimit   = epr * 4;
+
+  if (nodes.length === 0) {
+    document.getElementById('noResult').classList.remove('hidden');
+    document.getElementById('resultArea').classList.add('hidden');
+    return;
+  }
+  document.getElementById('noResult').classList.add('hidden');
+  document.getElementById('resultArea').classList.remove('hidden');
+
+  let totalPoll = 0;
+  const details = [];
+
+  nodes.forEach(n => {
+    const name = document.getElementById('name-' + n.id)?.value || '';
+    const type = document.getElementById('type-' + n.id)?.value || '';
+    const mac  = document.getElementById('mac-'  + n.id)?.value || '?';
+    const inB  = parseInt(document.getElementById('in-'  + n.id)?.value) || 0;
+    const outB = parseInt(document.getElementById('out-' + n.id)?.value) || 0;
+    const t    = nodeTransferTime(inB, outB, baud);
+    totalPoll += t;
+    const fIn  = fragCount(inB), fOut = fragCount(outB);
+    details.push({ name, type, mac, inB, outB, t, fIn, fOut, warn: fIn > 1 || fOut > 1 });
+  });
+
+  const recPIT       = Math.ceil(totalPoll * marginMult);
+  const busLoadPct   = Math.min((totalPoll / eprLimit) * 100, 100);
+  const explicitAvail= recPIT - totalPoll;
+
+  document.getElementById('rPollTime').textContent = totalPoll.toFixed(2);
+  document.getElementById('rPIT').textContent      = recPIT;
+  document.getElementById('rEPRLimit').textContent = eprLimit;
+  document.getElementById('rBusLoad').textContent  = busLoadPct.toFixed(1) + '%';
+
+  const fill = document.getElementById('gaugeFill');
+  fill.style.width      = Math.min(busLoadPct, 100) + '%';
+  fill.style.background = busLoadPct < 50 ? '#1D9E75' : busLoadPct < 80 ? '#EF9F27' : '#E24B4A';
+
+  const v = document.getElementById('verdictBox');
+  if (recPIT < eprLimit * 0.7) {
+    v.className = 'verdict ok';
+    v.textContent = `안전  |  권장 PIT = ${recPIT} ms — EPR 타임아웃(${eprLimit} ms) 대비 여유가 충분합니다. SyConDN Bus Parameters에 적용하십시오.`;
+  } else if (recPIT < eprLimit) {
+    v.className = 'verdict warn';
+    v.textContent = `주의  |  권장 PIT = ${recPIT} ms — EPR 타임아웃(${eprLimit} ms)에 근접합니다. EPR 상향 또는 노드 수 / I/O 크기 축소를 검토하십시오.`;
+  } else {
+    v.className = 'verdict err';
+    v.textContent = `경고  |  권장 PIT ${recPIT} ms가 EPR 타임아웃(${eprLimit} ms)을 초과합니다. 통신 속도 업그레이드(500 kbps) 또는 노드 분산이 필요합니다.`;
+  }
+
+  const db = document.getElementById('detailBody');
+  db.innerHTML = '';
+  details.forEach(d => {
+    const fragTxt = d.warn
+      ? `In: ${d.fIn}프레임 / Out: ${d.fOut}프레임`
+      : '단일 프레임';
+    const rowStyle = d.warn ? 'background:#FFF9E6;' : '';
+    const warnClr  = d.warn ? 'color:#7B4F00;font-weight:500' : '';
+    db.insertAdjacentHTML('beforeend', `
+      <tr style="${rowStyle}">
+        <td style="text-align:left;padding-left:10px">${d.name}</td>
+        <td>${d.mac}</td>
+        <td>${d.type.toUpperCase()}</td>
+        <td>${d.inB}</td>
+        <td>${d.outB}</td>
+        <td style="${warnClr}">${fragTxt}</td>
+        <td style="${warnClr}">${d.t.toFixed(3)}</td>
+        <td style="${warnClr}">${d.warn ? '부하 증가 — 최적화 권장' : '정상'}</td>
+      </tr>`);
+  });
+
+  document.getElementById('explicitInfo').innerHTML = `
+    <strong>전체 Poll 점유시간:</strong> ${totalPoll.toFixed(2)} ms<br>
+    <strong>권장 PIT 설정값:</strong> ${recPIT} ms &nbsp;←&nbsp; SyConDN Bus Parameters에 이 값을 입력하십시오<br>
+    <strong>Explicit Message 가용 시간:</strong> ${explicitAvail.toFixed(1)} ms (PIT − Poll 점유시간)<br>
+    <strong>EPR 타임아웃 상한선:</strong> ${eprLimit} ms (EPR ${epr} × 4)<br>
+    <span style="font-size:11px;color:var(--text-muted)">
+      ※ Explicit Message 1회 왕복 소요시간: 약 1~3 ms. 가용 시간이 충분할수록 통신 안정성이 높아집니다.<br>
+      ※ 이론값이므로 실제 적용 후 24시간 이상 모니터링을 권장합니다.
+    </span>
+  `;
+}
+
+addPreset('mfc');
+addPreset('mfc');
+addPreset('epc');
+</script>
+</body>
+</html>
